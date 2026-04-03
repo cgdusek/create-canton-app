@@ -3,6 +3,7 @@
 module Token where
 
 import Daml.Script
+import DA.Time (addRelTime, seconds)
 
 -------------------------------------------------------------------------------
 -- DATA TYPES
@@ -47,7 +48,7 @@ template Token
       with
         newOwner : Party
         newMetadata : TransferMetadata
-      controller owner
+      controller owner, newOwner
       do
         assertMsg "Cannot transfer locked tokens" (isNone lock)
         assertMsg "Cannot transfer to self" (newOwner /= owner)
@@ -151,8 +152,8 @@ template TransferProposal
     metadata : TransferMetadata
     expiresAt : Time
   where
-    signatory currentOwner
-    observer proposedOwner
+    signatory (signatory token)
+    observer (observer token), proposedOwner
 
     choice AcceptTransfer : ContractId Token
       with
@@ -160,7 +161,6 @@ template TransferProposal
       controller proposedOwner
       do
         assertMsg "Transfer proposal has expired" (acceptTime <= expiresAt)
-        exercise tokenCid Archive
         create token with
           owner = proposedOwner
           metadata = metadata with timestamp = acceptTime
@@ -168,12 +168,12 @@ template TransferProposal
     choice RejectTransfer : ContractId Token
       controller proposedOwner
       do
-        return tokenCid
+        create token
 
     choice WithdrawProposal : ContractId Token
       controller currentOwner
       do
-        return tokenCid
+        create token
 
 -------------------------------------------------------------------------------
 -- HELPER FUNCTIONS
@@ -213,10 +213,151 @@ setup = do
     lock = None
     metadata = transferMeta
   
-  submitMulti [alice, issuer] [] $ exerciseCmd tokenCid Transfer with
+  submitMulti [alice, bob] [] $ exerciseCmd tokenCid Transfer with
     newOwner = bob
     newMetadata = transferMeta with
       reason = Some "Payment to Bob"
       timestamp = now
   
   return ()
+
+directTransferRequiresRecipient : Script ()
+directTransferRequiresRecipient = do
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  issuer <- allocateParty "TokenIssuer"
+
+  now <- getTime
+
+  let transferMeta = TransferMetadata with
+        reason = Some "Initial allocation"
+        reference = None
+        timestamp = now
+
+  tokenCid <- submitMulti [issuer, alice] [] $ createCmd Token with
+    issuer = issuer
+    owner = alice
+    amount = 1000.0
+    tokenId = "TEST-TOKEN"
+    symbol = "TEST"
+    lock = None
+    metadata = transferMeta
+
+  submitMustFail alice do
+    exerciseCmd tokenCid Transfer with
+      newOwner = bob
+      newMetadata = transferMeta with
+        reason = Some "Missing Bob authorization"
+        timestamp = now
+
+proposalAcceptFlow : Script ()
+proposalAcceptFlow = do
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  issuer <- allocateParty "TokenIssuer"
+
+  now <- getTime
+  let expiresAt = addRelTime now (seconds 30)
+
+  let transferMeta = TransferMetadata with
+        reason = Some "Initial allocation"
+        reference = None
+        timestamp = now
+
+  tokenCid <- submitMulti [issuer, alice] [] $ createCmd Token with
+    issuer = issuer
+    owner = alice
+    amount = 1000.0
+    tokenId = "TEST-TOKEN"
+    symbol = "TEST"
+    lock = None
+    metadata = transferMeta
+
+  proposalCid <- submit alice do
+    exerciseCmd tokenCid ProposeTransfer with
+      newOwner = bob
+      proposalMetadata = transferMeta with
+        reason = Some "Proposal to Bob"
+        timestamp = now
+      expiresAt = expiresAt
+
+  transferredCid <- submit bob do
+    exerciseCmd proposalCid AcceptTransfer with
+      acceptTime = now
+
+  Some transferred <- queryContractId bob transferredCid
+  assert (transferred.owner == bob)
+
+proposalRejectRestoresOriginal : Script ()
+proposalRejectRestoresOriginal = do
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  issuer <- allocateParty "TokenIssuer"
+
+  now <- getTime
+  let expiresAt = addRelTime now (seconds 30)
+
+  let transferMeta = TransferMetadata with
+        reason = Some "Initial allocation"
+        reference = None
+        timestamp = now
+
+  tokenCid <- submitMulti [issuer, alice] [] $ createCmd Token with
+    issuer = issuer
+    owner = alice
+    amount = 1000.0
+    tokenId = "TEST-TOKEN"
+    symbol = "TEST"
+    lock = None
+    metadata = transferMeta
+
+  proposalCid <- submit alice do
+    exerciseCmd tokenCid ProposeTransfer with
+      newOwner = bob
+      proposalMetadata = transferMeta with
+        reason = Some "Proposal to Bob"
+        timestamp = now
+      expiresAt = expiresAt
+
+  restoredCid <- submit bob do
+    exerciseCmd proposalCid RejectTransfer
+
+  Some restored <- queryContractId alice restoredCid
+  assert (restored.owner == alice)
+
+proposalWithdrawRestoresOriginal : Script ()
+proposalWithdrawRestoresOriginal = do
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  issuer <- allocateParty "TokenIssuer"
+
+  now <- getTime
+  let expiresAt = addRelTime now (seconds 30)
+
+  let transferMeta = TransferMetadata with
+        reason = Some "Initial allocation"
+        reference = None
+        timestamp = now
+
+  tokenCid <- submitMulti [issuer, alice] [] $ createCmd Token with
+    issuer = issuer
+    owner = alice
+    amount = 1000.0
+    tokenId = "TEST-TOKEN"
+    symbol = "TEST"
+    lock = None
+    metadata = transferMeta
+
+  proposalCid <- submit alice do
+    exerciseCmd tokenCid ProposeTransfer with
+      newOwner = bob
+      proposalMetadata = transferMeta with
+        reason = Some "Proposal to Bob"
+        timestamp = now
+      expiresAt = expiresAt
+
+  restoredCid <- submit alice do
+    exerciseCmd proposalCid WithdrawProposal
+
+  Some restored <- queryContractId alice restoredCid
+  assert (restored.owner == alice)

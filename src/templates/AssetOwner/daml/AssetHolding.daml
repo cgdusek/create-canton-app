@@ -6,6 +6,7 @@ module AssetHolding where
 import DA.TextMap (TextMap)
 import qualified DA.TextMap as TM
 import Daml.Script
+import DA.Time (addRelTime, seconds)
 
 -------------------------------------------------------------------------------
 -- DATA TYPES
@@ -70,7 +71,7 @@ template Asset
       with
         newOwner : Party
         transferMeta : Metadata
-      controller owner
+      controller owner, newOwner
       do
         assertMsg "Cannot transfer locked asset" (isNone lock)
         assertMsg "Cannot transfer to self" (newOwner /= owner)
@@ -178,17 +179,14 @@ template TransferOffer
     createdAt : Time
     expiresAt : Time
   where
-    signatory sender
-    observer receiver
+    signatory (signatory asset)
+    observer (observer asset), receiver
 
     choice AcceptTransfer : ContractId Asset
       controller receiver
       do
         now <- getTime
         assertMsg "Transfer offer has expired" (now <= expiresAt)
-        
-        exercise assetCid Archive
-        
         create asset with
           owner = receiver
           meta = offerMetadata
@@ -198,12 +196,12 @@ template TransferOffer
         rejectionReason : Text
       controller receiver
       do
-        return assetCid
+        create asset
 
     choice WithdrawOffer : ContractId Asset
       controller sender
       do
-        return assetCid
+        create asset
 
 -------------------------------------------------------------------------------
 -- EXCHANGE DEPOSIT TEMPLATE
@@ -269,8 +267,135 @@ setup = do
     lock = None
     meta = createMemo "Initial issuance"
   
-  submitMulti [alice, issuer] [] $ exerciseCmd assetCid Transfer with
+  submitMulti [alice, bob] [] $ exerciseCmd assetCid Transfer with
     newOwner = bob
     transferMeta = createMemo "Payment to Bob"
   
   return ()
+
+directTransferRequiresRecipient : Script ()
+directTransferRequiresRecipient = do
+  issuer <- allocateParty "AssetIssuer"
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+
+  let instrumentId = InstrumentId with
+        admin = issuer
+        id = "GOLD-TOKEN"
+
+  assetCid <- submitMulti [issuer, alice] [] $ createCmd Asset with
+    issuer = issuer
+    owner = alice
+    amount = 1000.0
+    symbol = "GOLD"
+    instrumentId = instrumentId
+    lock = None
+    meta = createMemo "Initial issuance"
+
+  submitMustFail alice do
+    exerciseCmd assetCid Transfer with
+      newOwner = bob
+      transferMeta = createMemo "Missing Bob authorization"
+
+proposalAcceptFlow : Script ()
+proposalAcceptFlow = do
+  issuer <- allocateParty "AssetIssuer"
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+
+  now <- getTime
+  let expiresAt = addRelTime now (seconds 30)
+
+  let instrumentId = InstrumentId with
+        admin = issuer
+        id = "GOLD-TOKEN"
+
+  assetCid <- submitMulti [issuer, alice] [] $ createCmd Asset with
+    issuer = issuer
+    owner = alice
+    amount = 1000.0
+    symbol = "GOLD"
+    instrumentId = instrumentId
+    lock = None
+    meta = createMemo "Initial issuance"
+
+  offerCid <- submit alice do
+    exerciseCmd assetCid ProposeTransfer with
+      newOwner = bob
+      offerMeta = createMemo "Proposal to Bob"
+      expiresAt = expiresAt
+
+  transferredCid <- submit bob do
+    exerciseCmd offerCid AcceptTransfer
+
+  Some transferred <- queryContractId bob transferredCid
+  assert (transferred.owner == bob)
+
+proposalRejectRestoresOriginal : Script ()
+proposalRejectRestoresOriginal = do
+  issuer <- allocateParty "AssetIssuer"
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+
+  now <- getTime
+  let expiresAt = addRelTime now (seconds 30)
+
+  let instrumentId = InstrumentId with
+        admin = issuer
+        id = "GOLD-TOKEN"
+
+  assetCid <- submitMulti [issuer, alice] [] $ createCmd Asset with
+    issuer = issuer
+    owner = alice
+    amount = 1000.0
+    symbol = "GOLD"
+    instrumentId = instrumentId
+    lock = None
+    meta = createMemo "Initial issuance"
+
+  offerCid <- submit alice do
+    exerciseCmd assetCid ProposeTransfer with
+      newOwner = bob
+      offerMeta = createMemo "Proposal to Bob"
+      expiresAt = expiresAt
+
+  restoredCid <- submit bob do
+    exerciseCmd offerCid RejectTransfer with
+      rejectionReason = "Keep original owner"
+
+  Some restored <- queryContractId alice restoredCid
+  assert (restored.owner == alice)
+
+proposalWithdrawRestoresOriginal : Script ()
+proposalWithdrawRestoresOriginal = do
+  issuer <- allocateParty "AssetIssuer"
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+
+  now <- getTime
+  let expiresAt = addRelTime now (seconds 30)
+
+  let instrumentId = InstrumentId with
+        admin = issuer
+        id = "GOLD-TOKEN"
+
+  assetCid <- submitMulti [issuer, alice] [] $ createCmd Asset with
+    issuer = issuer
+    owner = alice
+    amount = 1000.0
+    symbol = "GOLD"
+    instrumentId = instrumentId
+    lock = None
+    meta = createMemo "Initial issuance"
+
+  offerCid <- submit alice do
+    exerciseCmd assetCid ProposeTransfer with
+      newOwner = bob
+      offerMeta = createMemo "Proposal to Bob"
+      expiresAt = expiresAt
+
+  restoredCid <- submit alice do
+    exerciseCmd offerCid WithdrawOffer
+
+  Some restored <- queryContractId alice restoredCid
+  assert (restored.owner == alice)

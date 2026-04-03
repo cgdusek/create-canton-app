@@ -1,5 +1,6 @@
 const ora = require('ora');
 const shell = require('shelljs');
+const { isDpmInstalled } = require('./runtime');
 
 const colors = {
   red: (text) => `\x1b[31m${text}\x1b[0m`,
@@ -12,18 +13,16 @@ function compile() {
   console.log('');
   const spinner = ora('Compiling Daml contracts...').start();
 
-  // Check if daml is installed
-  if (!shell.which('daml')) {
-    spinner.fail(colors.red('Daml SDK not found!'));
+  if (!isDpmInstalled()) {
+    spinner.fail(colors.red('DPM not found!'));
     console.log('');
-    console.log(colors.yellow('Install Daml SDK:'));
-    console.log(colors.white('  curl -sSL https://get.daml.com/ | sh'));
+    console.log(colors.yellow('Install DPM:'));
+    console.log(colors.white('  curl https://get.digitalasset.com/install/install.sh | sh'));
     console.log('');
     process.exit(1);
   }
 
-  // Run daml build
-  const result = shell.exec('daml build', { silent: true });
+  const result = shell.exec('dpm build', { silent: true });
 
   if (result.code !== 0) {
     spinner.fail(colors.red('Compilation failed!'));

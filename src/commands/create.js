@@ -3,6 +3,7 @@ const ora = require('ora');
 const fs = require('fs-extra');
 const path = require('path');
 const shell = require('shelljs');
+const { getDpmVersion, getJavaCheck, isDpmInstalled } = require('./runtime');
 
 const colors = {
   red: (text) => `\x1b[31m${text}\x1b[0m`,
@@ -13,20 +14,6 @@ const colors = {
   dim: (text) => `\x1b[2m${text}\x1b[0m`,
   bold: (text) => `\x1b[1m${text}\x1b[0m`
 };
-
-function isDpmInstalled() {
-  return shell.which('dpm') !== null;
-}
-
-function getDpmVersion() {
-  try {
-    const result = shell.exec('dpm version --active', { silent: true });
-    const match = result.stdout.match(/(\d+\.\d+\.\d+)/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
 
 function getDpmTemplates() {
   try {
@@ -174,9 +161,11 @@ async function create(projectName, options) {
       console.log(colors.green(`✅ DPM found${version ? ` (v${version})` : ''}`));
     }
 
-    if (!shell.which('java')) {
-      console.log(colors.yellow('⚠️  Java not found (optional, needed for tests)'));
+    const javaCheck = getJavaCheck();
+    if (!javaCheck.available) {
+      console.log(colors.yellow('⚠️  Usable Java runtime not found (optional, needed for tests)'));
       console.log(colors.dim('   Install: brew install openjdk@17'));
+      console.log(colors.dim('   macOS note: /usr/bin/java may exist without a configured JDK'));
     } else {
       console.log(colors.green('✅ Java Runtime found'));
     }

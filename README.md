@@ -8,7 +8,8 @@ Scaffold Canton Network Daml projects in seconds. A CLI tool to quickly bootstra
 
 ## Requirements
 - Node.js v16+
-- Java Runtime (for tests)
+- DPM (`curl https://get.digitalasset.com/install/install.sh | sh`)
+- JDK 17+ on your `PATH` (required for `dpm test`)
 
 ## Quick Start
 

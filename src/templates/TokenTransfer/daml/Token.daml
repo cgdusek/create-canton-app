@@ -221,8 +221,8 @@ setup = do
   
   return ()
 
-directTransferRequiresRecipient : Script ()
-directTransferRequiresRecipient = do
+directTransferWithoutRecipientFails : Script ()
+directTransferWithoutRecipientFails = do
   alice <- allocateParty "Alice"
   bob <- allocateParty "Bob"
   issuer <- allocateParty "TokenIssuer"

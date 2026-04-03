@@ -1,0 +1,43 @@
+name: Template Smoke Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  template-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DPM_SDK_VERSION: 3.4.9
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install DPM
+        run: |
+          curl -fsSL https://get.digitalasset.com/install/install.sh | sh
+          echo "$HOME/.dpm/bin" >> "$GITHUB_PATH"
+
+      - name: Install DPM SDK
+        run: dpm install "$DPM_SDK_VERSION"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Smoke test bundled templates
+        run: npm run smoke:test-templates

@@ -12,6 +12,7 @@
     "canton-dev": "./bin/create-canton-app.js"
   },
   "scripts": {
+    "smoke:test-templates": "bash scripts/smoke-test-templates.sh",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

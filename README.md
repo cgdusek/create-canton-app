@@ -42,6 +42,15 @@ dpm test
 
 5. Open a Pull Request
 
+### Smoke Tests
+
+Run the same scaffold smoke checks that CI runs:
+
+```bash
+npm ci
+npm run smoke:test-templates
+```
+
 ### Adding Custom Templates
 
 1. Create Your Template folder with a 'daml' subdir (rename 'my-template' as your desired template name)

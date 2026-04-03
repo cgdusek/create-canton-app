@@ -25,7 +25,7 @@ program
 // Main create command
 program
   .argument('[project-name]', 'Name of your project')
-  .option('-t, --template <type>', 'Template to use (token, escrow, empty)', 'token')
+  .option('-t, --template <type>', 'Template to use (token, multiparty, asset)')
   .option('--no-tests', 'Skip test files')
   .action(create);
 

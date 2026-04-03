@@ -14,6 +14,24 @@ const colors = {
   bold: (text) => `\x1b[1m${text}\x1b[0m`
 };
 
+const BEGINNER_TEMPLATES = [
+  {
+    name: 'Token Transfer System',
+    value: 'TokenTransfer',
+    aliases: ['token', 'token-transfer']
+  },
+  {
+    name: 'Multi-Party Agreement',
+    value: 'Multiparty',
+    aliases: ['multi-party']
+  },
+  {
+    name: 'Asset Holding System',
+    value: 'AssetOwner',
+    aliases: ['asset', 'asset-owner']
+  }
+];
+
 function isDpmInstalled() {
   return shell.which('dpm') !== null;
 }
@@ -54,6 +72,17 @@ function getDpmTemplates() {
   } catch {
     return [];
   }
+}
+
+function resolveBeginnerTemplate(template) {
+  if (!template) return null;
+
+  const normalized = template.trim().toLowerCase();
+  const match = BEGINNER_TEMPLATES.find(({ value, aliases }) =>
+    value.toLowerCase() === normalized || aliases.includes(normalized)
+  );
+
+  return match ? match.value : null;
 }
 
 async function installDpm() {
@@ -282,23 +311,29 @@ async function create(projectName, options) {
           type: 'list',
           name: 'template',
           message: 'Which template would you like?',
-          choices: [
-            { name: 'Token Transfer System', value: 'TokenTransfer' },
-            { name: 'Multi-Party Agreement', value: 'Multiparty' },
-            { name: 'Asset Holding System', value: 'AssetOwner' }
-          ]
+          choices: BEGINNER_TEMPLATES.map(({ name, value }) => ({ name, value }))
         }
       ]);
       template = answers.template;
+    } else {
+      template = resolveBeginnerTemplate(template);
+      if (!template) {
+        console.log(colors.red(`❌ Unknown template: ${options.template}`));
+        console.log(colors.yellow('Valid templates: token, multiparty, asset'));
+        process.exit(1);
+      }
     }
 
     console.log('');
     const spinner = ora('Creating your Canton project...').start();
 
-    const projectPath = path.join(process.cwd(), projectName);
+    const projectPath = path.isAbsolute(projectName)
+      ? projectName
+      : path.join(process.cwd(), projectName);
+    const projectDirName = path.basename(projectPath);
     
     if (fs.existsSync(projectPath)) {
-      spinner.fail(colors.red(`Folder ${projectName} already exists!`));
+      spinner.fail(colors.red(`Folder ${projectPath} already exists!`));
       process.exit(1);
     }
 
@@ -308,16 +343,16 @@ async function create(projectName, options) {
     if (fs.existsSync(templatePath)) {
       fs.copySync(templatePath, projectPath);
     } else {
-      spinner.warn(colors.yellow(`Template ${template} not found.`));
-      fs.mkdirSync(path.join(projectPath, 'daml'), { recursive: true });
+      spinner.fail(colors.red(`Template ${template} not found.`));
+      process.exit(1);
     }
 
     fs.mkdirSync(path.join(projectPath, 'scripts'), { recursive: true });
     fs.mkdirSync(path.join(projectPath, 'config'), { recursive: true });
 
     createScripts(projectPath);
-    createConfig(projectPath, projectName);
-    createReadme(projectPath, projectName, template);
+    createConfig(projectPath, projectDirName);
+    createReadme(projectPath, projectDirName, template);
     createGitignore(projectPath);
 
     spinner.succeed(colors.green('✨ Project created successfully!'));
@@ -325,7 +360,7 @@ async function create(projectName, options) {
     console.log('');
     console.log(colors.cyan(colors.bold('Next steps:')));
     console.log('');
-    console.log(colors.white(`  cd ${projectName}`));
+    console.log(colors.white(`  cd ${projectPath}`));
     
     if (dpmAvailable) {
       console.log(colors.white(`  dpm build           ${colors.dim('# Compile')}`));
